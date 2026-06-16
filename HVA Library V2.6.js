@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         HVA Library – Custom HVA Picker
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/YOUR_GITHUB_USERNAME/hva-library
 // @version      1.0.0
-// @description  Intercepts the Custom HVA text input and replaces manual typing with a searchable, Amazon-styled HVA Library modal.
-// @author       Internal Eval Tools
+// @description  Searchable HVA Library with Custom HVA support
+// @author       Piyush
 // @match        https://pre-prod.amazon.com/businessprime*
+// @downloadURL  https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/hva-library/main/hva-library.user.js
+// @updateURL    https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/hva-library/main/hva-library.user.js
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
