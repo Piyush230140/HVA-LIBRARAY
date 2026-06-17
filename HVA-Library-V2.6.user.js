@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Amazon Business Prime - HVA Library + Query Counter
 // @namespace    http://tampermonkey.net/
-// @version      3.0.0
-// @description  Combined script: (1) searchable HVA Library modal for the Custom HVA field, (2) floating query counter tracking feedback panel submissions.
+// @version      4.0.0
+// @description  Combined script: (1) searchable HVA Library modal for the Custom HVA field, (2) floating query counter tracking feedback panel submissions. Active only when the URL contains showDevConsole=true, on any page/path, including SPA navigation without full reloads.
 // @author       Internal Eval Tools / arvindon
-// @match        https://pre-prod.amazon.com/*
+// @match        https://pre-prod.amazon.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-idle
@@ -13,10 +13,25 @@
 (function () {
   'use strict';
 
+  /* ─────────────────────────────────────────────
+     ACTIVATION CHECK
+     The script matches every page on this domain
+     (so it works regardless of which tool/page you're on),
+     but the HVA Library + Query Counter only mount when
+     the URL carries the dev-console activation query string.
+     See the ACTIVATION CONTROLLER near the bottom of this
+     file for the mount/unmount logic, including SPA support.
+  ───────────────────────────────────────────── */
+  function isToolActivated() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('showDevConsole') === 'true';
+  }
+
   /* ═════════════════════════════════════════════
      MODULE A: HVA LIBRARY
   ═════════════════════════════════════════════ */
-  (function HVALibraryModule() {
+  const HVALibraryModule = (function () {
+    let initialized = false;
 
   /* ─────────────────────────────────────────────
      1. HVA DATA
@@ -201,6 +216,15 @@
       font-size: 16px;
       flex-shrink: 0;
       opacity: 0.7;
+    }
+    .hva-item .hva-icon.hva-icon-dot {
+      font-size: 22px;
+      line-height: 1;
+      width: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.5;
     }
     .hva-item-label {
       flex: 1;
@@ -412,13 +436,13 @@
   /* ─────────────────────────────────────────────
      3. STATE
   ───────────────────────────────────────────── */
-  let overlayEl= null;
-  let searchEl= null;
-  let listWrapEl= null;
-  let toastEl= null;
-  let toastTimer = null;
-  let focusedIndex = -1;
-  let visibleItems = []; // Array (not NodeList) of currently rendered .hva-item
+  let overlayEl      = null;
+  let searchEl       = null;
+  let listWrapEl     = null;
+  let toastEl        = null;
+  let toastTimer     = null;
+  let focusedIndex   = -1;
+  let visibleItems   = []; // Array (not NodeList) of currently rendered .hva-item
 
   /* ─────────────────────────────────────────────
      4. INJECT STYLES
@@ -563,8 +587,8 @@
         item.dataset.hva = hva;
 
         const icon = document.createElement('span');
-        icon.className = 'hva-icon';
-        icon.textContent = '📁';
+        icon.className = 'hva-icon hva-icon-dot';
+        icon.textContent = '•';
 
         const label = document.createElement('span');
         label.className = 'hva-item-label';
@@ -807,9 +831,9 @@
 
   function hideHVAPopup() {
     if (overlayEl && overlayEl.parentNode) overlayEl.parentNode.removeChild(overlayEl);
-    overlayEl= null;
-    searchEl= null;
-    listWrapEl= null;
+    overlayEl    = null;
+    searchEl     = null;
+    listWrapEl   = null;
     focusedIndex = -1;
     visibleItems = [];
     document.removeEventListener('keydown', handleGlobalKeydown);
@@ -853,13 +877,14 @@
 
   /* ─────────────────────────────────────────────
      10. CLICK DETECTION – show popup on "Custom" option click
+     Registered/unregistered by init()/destroy() below.
   ───────────────────────────────────────────── */
-  document.addEventListener('click', function (e) {
+  function handleCustomOptionClick(e) {
     const option = e.target.closest('[data-key="Custom"]');
     if (!option) return;
     console.log('[HVA] Custom option clicked');
     setTimeout(() => showHVAPopup(), 150);
-  }, true);
+  }
 
   /* ─────────────────────────────────────────────
      11. EXPOSE HELPERS TO CONSOLE (dev convenience)
@@ -870,6 +895,30 @@
     badge.id = 'hva-status';
     badge.textContent = 'HVA Library ON';
     document.body.appendChild(badge);
+  }
+
+  function init() {
+    if (initialized) return;
+    initialized = true;
+    injectStyles();
+    ensureToast();
+    createStatusIndicator();
+    document.addEventListener('click', handleCustomOptionClick, true);
+    console.info('[HVA Library] module initialized');
+  }
+
+  function destroy() {
+    if (!initialized) return;
+    initialized = false;
+    hideHVAPopup();
+    const existingCustomOverlay = document.getElementById('custom-hva-overlay');
+    if (existingCustomOverlay) existingCustomOverlay.remove();
+    const badge = document.getElementById('hva-status');
+    if (badge) badge.remove();
+    const toast = document.getElementById('hva-toast');
+    if (toast) toast.remove();
+    document.removeEventListener('click', handleCustomOptionClick, true);
+    console.info('[HVA Library] module destroyed');
   }
 
   window.__HVALibrary = {
@@ -883,157 +932,195 @@
     deleteCustomHVA,
   };
 
-  injectStyles();
-  ensureToast();
-  createStatusIndicator();
-
-  console.info('[HVA Library] module loaded');
-  })(); // ── end HVALibraryModule ──
+  return { init, destroy };
+  })(); // ── end HVALibraryModule factory ──
 
   /* ═════════════════════════════════════════════
      MODULE B: QUERY COUNTER
   ═════════════════════════════════════════════ */
-  (function QueryCounterModule() {
+  const QueryCounterModule = (function () {
+    let initialized = false;
+    let queryCount = 0;
+    let counterEl = null;
+    let styleEl = null;
+    let observer = null;
+    let onMouseDown, onMouseMove, onMouseUp, onResetClick;
 
-    // ─── Load persisted count ───────────────────────────────────────────────
-    let queryCount = GM_getValue('queryCount', 0);
-    let lastResetDate = GM_getValue('lastResetDate', null);
+    function init() {
+      if (initialized) return;
+      initialized = true;
 
-    const today = new Date().toDateString();
-    if (lastResetDate !== today) {
-      queryCount = 0;
-      GM_setValue('queryCount', 0);
-      GM_setValue('lastResetDate', today);
-    }
+      // ─── Load persisted count ─────────────────────────────────────────
+      queryCount = GM_getValue('queryCount', 0);
+      let lastResetDate = GM_getValue('lastResetDate', null);
 
-    // ─── Create floating counter UI ─────────────────────────────────────────
-    const counter = document.createElement('div');
-    counter.id = 'query-counter';
-    counter.innerHTML = `
-      <div id="qc-header">📊 Query Counter</div>
-      <div id="qc-body">
-        <span id="qc-count">${queryCount}</span>
-        <span id="qc-label"> queries today</span>
-      </div>
-      <button id="qc-reset">Reset</button>
-    `;
-
-    const style = document.createElement('style');
-    style.textContent = `
-      #query-counter {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background: #232F3E;
-        color: #fff;
-        padding: 12px 16px;
-        border-radius: 10px;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        z-index: 999999;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-        min-width: 160px;
-        text-align: center;
-        cursor: move;
-        user-select: none;
-      }
-      #qc-header {
-        font-weight: bold;
-        font-size: 13px;
-        margin-bottom: 6px;
-        color: #FF9900;
-      }
-      #qc-count {
-        font-size: 32px;
-        font-weight: bold;
-        color: #FF9900;
-        transition: color 0.3s ease;
-      }
-      #qc-label {
-        font-size: 12px;
-        color: #ccc;
-      }
-      #qc-reset {
-        margin-top: 8px;
-        background: #FF9900;
-        border: none;
-        color: #232F3E;
-        padding: 4px 12px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-weight: bold;
-        font-size: 12px;
-        width: 100%;
-        transition: background 0.2s ease;
-      }
-      #qc-reset:hover {
-        background: #e68a00;
-      }
-      #qc-reset[data-confirming] {
-        background: #cc0000;
-        color: #fff;
-      }
-      #qc-reset[data-confirming]:hover {
-        background: #aa0000;
-      }
-    `;
-
-    document.head.appendChild(style);
-    document.body.appendChild(counter);
-
-    // ─── Normalize position to top/left immediately after mount ─────────────
-    requestAnimationFrame(() => {
-      const rect = counter.getBoundingClientRect();
-      counter.style.top = rect.top + 'px';
-      counter.style.left = rect.left + 'px';
-      counter.style.bottom = 'auto';
-      counter.style.right = 'auto';
-    });
-
-    // ─── Make counter draggable ──────────────────────────────────────────────
-    let isDragging = false, offsetX, offsetY;
-
-    counter.addEventListener('mousedown', (e) => {
-      if (e.target.id === 'qc-reset') return;
-      isDragging = true;
-      offsetX = e.clientX - counter.getBoundingClientRect().left;
-      offsetY = e.clientY - counter.getBoundingClientRect().top;
-    });
-
-    document.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      counter.style.left = `${e.clientX - offsetX}px`;
-      counter.style.top = `${e.clientY - offsetY}px`;
-    });
-
-    document.addEventListener('mouseup', () => isDragging = false);
-
-    // ─── Reset button — inline two-step confirm ──────────────────────────────
-    document.getElementById('qc-reset').addEventListener('click', () => {
-      const btn = document.getElementById('qc-reset');
-      if (btn.dataset.confirming) {
+      const today = new Date().toDateString();
+      if (lastResetDate !== today) {
         queryCount = 0;
         GM_setValue('queryCount', 0);
-        document.getElementById('qc-count').textContent = 0;
-        btn.textContent = 'Reset';
-        delete btn.dataset.confirming;
-      } else {
-        btn.dataset.confirming = 'true';
-        btn.textContent = 'Confirm?';
-        setTimeout(() => {
-          if (btn.dataset.confirming) {
-            btn.textContent = 'Reset';
-            delete btn.dataset.confirming;
-          }
-        }, 3000);
+        GM_setValue('lastResetDate', today);
       }
+
+      // Guard against double-mount (e.g. rapid SPA nav toggling)
+      if (document.getElementById('query-counter')) return;
+
+      // ─── Create floating counter UI ─────────────────────────────────
+      counterEl = document.createElement('div');
+      counterEl.id = 'query-counter';
+      counterEl.innerHTML = `
+        <div id="qc-header">📊 Query Counter</div>
+        <div id="qc-body">
+          <span id="qc-count">${queryCount}</span>
+          <span id="qc-label"> queries today</span>
+        </div>
+        <button id="qc-reset">Reset</button>
+      `;
+
+      styleEl = document.createElement('style');
+      styleEl.id = 'query-counter-styles';
+      styleEl.textContent = `
+        #query-counter {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          background: #232F3E;
+          color: #fff;
+          padding: 12px 16px;
+          border-radius: 10px;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          z-index: 999999;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+          min-width: 160px;
+          text-align: center;
+          cursor: move;
+          user-select: none;
+        }
+        #qc-header {
+          font-weight: bold;
+          font-size: 13px;
+          margin-bottom: 6px;
+          color: #FF9900;
+        }
+        #qc-count {
+          font-size: 32px;
+          font-weight: bold;
+          color: #FF9900;
+          transition: color 0.3s ease;
+        }
+        #qc-label {
+          font-size: 12px;
+          color: #ccc;
+        }
+        #qc-reset {
+          margin-top: 8px;
+          background: #FF9900;
+          border: none;
+          color: #232F3E;
+          padding: 4px 12px;
+          border-radius: 5px;
+          cursor: pointer;
+          font-weight: bold;
+          font-size: 12px;
+          width: 100%;
+          transition: background 0.2s ease;
+        }
+        #qc-reset:hover {
+          background: #e68a00;
+        }
+        #qc-reset[data-confirming] {
+          background: #cc0000;
+          color: #fff;
+        }
+        #qc-reset[data-confirming]:hover {
+          background: #aa0000;
+        }
+      `;
+
+      document.head.appendChild(styleEl);
+      document.body.appendChild(counterEl);
+
+      // ─── Normalize position to top/left immediately after mount ───────
+      requestAnimationFrame(() => {
+        if (!counterEl) return;
+        const rect = counterEl.getBoundingClientRect();
+        counterEl.style.top = rect.top + 'px';
+        counterEl.style.left = rect.left + 'px';
+        counterEl.style.bottom = 'auto';
+        counterEl.style.right = 'auto';
     });
 
-    // ─── Flash animation on count increment ──────────────────────────────────
+      // ─── Make counter draggable ──────────────────────────────────────
+      let isDragging = false, offsetX, offsetY;
+
+      onMouseDown = (e) => {
+        if (e.target.id === 'qc-reset') return;
+        isDragging = true;
+        offsetX = e.clientX - counterEl.getBoundingClientRect().left;
+        offsetY = e.clientY - counterEl.getBoundingClientRect().top;
+      };
+
+      onMouseMove = (e) => {
+        if (!isDragging) return;
+        counterEl.style.left = `${e.clientX - offsetX}px`;
+        counterEl.style.top = `${e.clientY - offsetY}px`;
+      };
+
+      onMouseUp = () => isDragging = false;
+
+      counterEl.addEventListener('mousedown', onMouseDown);
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+
+      // ─── Reset button — inline two-step confirm ───────────────────────
+      onResetClick = () => {
+        const btn = document.getElementById('qc-reset');
+        if (btn.dataset.confirming) {
+          queryCount = 0;
+          GM_setValue('queryCount', 0);
+          document.getElementById('qc-count').textContent = 0;
+          btn.textContent = 'Reset';
+          delete btn.dataset.confirming;
+        } else {
+          btn.dataset.confirming = 'true';
+          btn.textContent = 'Confirm?';
+          setTimeout(() => {
+            if (btn.dataset.confirming) {
+              btn.textContent = 'Reset';
+              delete btn.dataset.confirming;
+            }
+          }, 3000);
+        }
+      };
+      document.getElementById('qc-reset').addEventListener('click', onResetClick);
+
+      // ─── MutationObserver: watch for Submit button ─────────────────────
+      observer = new MutationObserver(() => {
+        const submitButtons = document.querySelectorAll('button');
+        submitButtons.forEach((btn) => {
+          if (
+            btn.innerText.trim().toLowerCase() === 'submit' &&
+            !btn.dataset.qcListening
+          ) {
+            btn.dataset.qcListening = 'true';
+            btn.addEventListener('click', () => {
+              setTimeout(updateCount, 500);
+            });
+          }
+        });
+      });
+
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      console.info('[Query Counter] module initialized');
+    }
+
+    // ─── Flash animation on count increment ────────────────────────────
     function updateCount() {
       queryCount++;
       GM_setValue('queryCount', queryCount);
       const countEl = document.getElementById('qc-count');
+      if (!countEl) return;
       countEl.textContent = queryCount;
       countEl.style.color = '#FF9900';
       countEl.style.transition = 'transform 0.2s ease';
@@ -1041,26 +1128,83 @@
       setTimeout(() => countEl.style.transform = 'scale(1)', 300);
     }
 
-    // ─── MutationObserver: watch for Submit button ───────────────────────────
-    const observer = new MutationObserver(() => {
-      const submitButtons = document.querySelectorAll('button');
-      submitButtons.forEach((btn) => {
-        if (
-          btn.innerText.trim().toLowerCase() === 'submit' &&
-          !btn.dataset.qcListening
-        ) {
-          btn.dataset.qcListening = 'true';
-          btn.addEventListener('click', () => {
-            setTimeout(updateCount, 500);
-          });
-        }
-      });
+    function destroy() {
+      if (!initialized) return;
+      initialized = false;
+
+      if (observer) { observer.disconnect(); observer = null; }
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      if (counterEl) {
+        counterEl.removeEventListener('mousedown', onMouseDown);
+        counterEl.remove();
+        counterEl = null;
+      }
+      if (styleEl) { styleEl.remove(); styleEl = null; }
+
+      console.info('[Query Counter] module destroyed');
+    }
+
+    return { init, destroy };
+  })(); // ── end QueryCounterModule factory ──
+
+  /* ═════════════════════════════════════════════
+     ACTIVATION CONTROLLER
+     Watches the URL (including SPA pushState/replaceState
+     navigation, not just full page loads) and mounts/
+     unmounts both modules based on whether the
+     showDevConsole=true query param is present.
+  ═════════════════════════════════════════════ */
+  let currentlyActive = false;
+
+  function syncActivation() {
+    const shouldBeActive = isToolActivated();
+    if (shouldBeActive && !currentlyActive) {
+      currentlyActive = true;
+      HVALibraryModule.init();
+      QueryCounterModule.init();
+      console.info('[Combined Script] Activated (showDevConsole=true detected)');
+    } else if (!shouldBeActive && currentlyActive) {
+      currentlyActive = false;
+      HVALibraryModule.destroy();
+      QueryCounterModule.destroy();
+      console.info('[Combined Script] Deactivated (showDevConsole left the URL)');
+    }
+  }
+
+  // Initial check on page load
+  syncActivation();
+
+  // ── Watch for SPA navigation (pushState/replaceState/popstate) ──
+  // Single-page apps change the URL without a full reload, so we patch
+  // history methods to re-check activation whenever the URL changes.
+  (function watchUrlChanges() {
+    const _pushState = history.pushState;
+    const _replaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      const result = _pushState.apply(this, args);
+      window.dispatchEvent(new Event('hva-url-changed'));
+      return result;
+    };
+
+    history.replaceState = function (...args) {
+      const result = _replaceState.apply(this, args);
+      window.dispatchEvent(new Event('hva-url-changed'));
+      return result;
+    };
+
+    window.addEventListener('popstate', () => {
+      window.dispatchEvent(new Event('hva-url-changed'));
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('hva-url-changed', syncActivation);
 
-    console.info('[Query Counter] module loaded');
-  })(); // ── end QueryCounterModule ──
+    // Fallback safety net: some SPAs update the URL via History API
+    // in ways that don't always fire predictably. A light periodic
+    // check catches anything the patches above might miss.
+    setInterval(syncActivation, 1000);
+  })();
 
-  console.info('[Combined Script] HVA Library + Query Counter ready');
+  console.info('[Combined Script] HVA Library + Query Counter loaded (waiting for activation)');
 })();
