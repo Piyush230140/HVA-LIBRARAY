@@ -1,19 +1,22 @@
 // ==UserScript==
-// @name         HVA Library – Custom HVA Picker
-// @namespace    https://github.com/YOUR_GITHUB_USERNAME/hva-library
-// @version      1.0.0
-// @description  Searchable HVA Library with Custom HVA support
-// @author       Piyush
-// @match        https://pre-prod.amazon.com/businessprime*
-// @downloadURL  https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/hva-library/main/hva-library.user.js
-// @updateURL    https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/hva-library/main/hva-library.user.js
-// @grant        none
+// @name         Amazon Business Prime - HVA Library + Query Counter
+// @namespace    http://tampermonkey.net/
+// @version      3.0.0
+// @description  Combined script: (1) searchable HVA Library modal for the Custom HVA field, (2) floating query counter tracking feedback panel submissions.
+// @author       Internal Eval Tools / arvindon
+// @match        https://pre-prod.amazon.com/*
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @run-at       document-idle
 // ==/UserScript==
 
-
 (function () {
   'use strict';
+
+  /* ═════════════════════════════════════════════
+     MODULE A: HVA LIBRARY
+  ═════════════════════════════════════════════ */
+  (function HVALibraryModule() {
 
   /* ─────────────────────────────────────────────
      1. HVA DATA
@@ -38,43 +41,33 @@
     'AB Registration',
     'Your Orders',
   ];
-HVA_LIST.sort((a, b) => a.localeCompare(b));
-const CUSTOM_HVA_STORAGE_KEY = 'hva_custom_library';
-function getCustomHVAs() {
-  try {
-    return JSON.parse(
-      localStorage.getItem(CUSTOM_HVA_STORAGE_KEY)
-    ) || [];
-  } catch {
-    return [];
+  HVA_LIST.sort((a, b) => a.localeCompare(b));
+
+  const CUSTOM_HVA_STORAGE_KEY = 'hva_custom_library';
+
+  function getCustomHVAs() {
+    try {
+      return JSON.parse(localStorage.getItem(CUSTOM_HVA_STORAGE_KEY)) || [];
+    } catch {
+      return [];
+    }
   }
-}
 
-function saveCustomHVA(hva) {
-
-  const items = getCustomHVAs();
-
-  if (!items.includes(hva)) {
-
-    items.push(hva);
-
-    localStorage.setItem(
-      CUSTOM_HVA_STORAGE_KEY,
-      JSON.stringify(items)
-    );
+  function saveCustomHVA(hva) {
+    const items = getCustomHVAs();
+    // FIX: also check against built-in list to prevent duplicates
+    const allExisting = [...HVA_LIST, ...items];
+    if (!allExisting.includes(hva)) {
+      items.push(hva);
+      localStorage.setItem(CUSTOM_HVA_STORAGE_KEY, JSON.stringify(items));
+    }
   }
-}
 
-function deleteCustomHVA(hva) {
+  function deleteCustomHVA(hva) {
+    const items = getCustomHVAs().filter(x => x !== hva);
+    localStorage.setItem(CUSTOM_HVA_STORAGE_KEY, JSON.stringify(items));
+  }
 
-  const items = getCustomHVAs()
-    .filter(x => x !== hva);
-
-  localStorage.setItem(
-    CUSTOM_HVA_STORAGE_KEY,
-    JSON.stringify(items)
-  );
-}
   /* ─────────────────────────────────────────────
      2. CSS INJECTION
   ───────────────────────────────────────────── */
@@ -182,38 +175,28 @@ function deleteCustomHVA(hva) {
     #hva-list-wrap::-webkit-scrollbar { width: 6px; }
     #hva-list-wrap::-webkit-scrollbar-thumb { background: #c9c9c9; border-radius: 3px; }
 
-  .hva-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-
-  padding: 12px 16px;
-  margin: 6px 12px;
-
-  background: #ffffff;
-
-  border: 1px solid #D5D9D9;
-  border-left: 4px solid #FF9900;
-
-  border-radius: 8px;
-
-  cursor: pointer;
-
-  font-size: 14px;
-  color: #0F1111;
-
-  transition: all 0.15s ease;
-}   .hva-item:hover,
-.hva-item.hva-focused {
-
-  background: #FF9900;
-
-  border-color: #FF9900;
-
-  color: #111111;
-
-  box-shadow: 0 2px 8px rgba(255,153,0,0.35);
-}
+    .hva-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      margin: 6px 12px;
+      background: #ffffff;
+      border: 1px solid #D5D9D9;
+      border-left: 4px solid #FF9900;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #0F1111;
+      transition: all 0.15s ease;
+    }
+    .hva-item:hover,
+    .hva-item.hva-focused {
+      background: #FF9900;
+      border-color: #FF9900;
+      color: #111111;
+      box-shadow: 0 2px 8px rgba(255,153,0,0.35);
+    }
     .hva-item .hva-icon {
       font-size: 16px;
       flex-shrink: 0;
@@ -244,67 +227,23 @@ function deleteCustomHVA(hva) {
       color: #005B6B !important;
     }
 
-    /* ── Inline custom form ── */
-    #hva-custom-form {
-      padding: 14px 18px 16px;
-      background: #f0f8ff;
-      border-top: 1px solid #c8e6f5;
-      flex-shrink: 0;
-    }
-    #hva-custom-form label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: #555;
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    #hva-custom-input-row {
-      display: flex;
-      gap: 8px;
-    }
-    #hva-custom-text {
-      flex: 1;
-      padding: 8px 10px;
-      border: 1px solid #a0a0a0;
-      border-radius: 4px;
-      font-size: 14px;
-      color: #0F1111;
-      outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    #hva-custom-text:focus {
-      border-color: #007185;
-      box-shadow: 0 0 0 3px rgba(0,113,133,0.2);
-    }
-    #hva-custom-insert {
-      padding: 8px 16px;
-      background: linear-gradient(to bottom, #FFD814, #FFA41C);
-      border: 1px solid #FCD200;
-      border-radius: 4px;
-      font-size: 13px;
-      font-weight: 700;
-      color: #111;
+    /* ── Delete button on custom items ── */
+    .hva-delete {
+      opacity: 0;
       cursor: pointer;
-      white-space: nowrap;
-      transition: filter 0.15s;
+      color: #DC2626;
+      padding: 4px;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+      margin-left: auto;
     }
-    #hva-custom-insert:hover {
-      filter: brightness(1.06);
+    .hva-delete:hover {
+      background: #FEE2E2;
     }
-    #hva-custom-cancel {
-      background: none;
-      border: none;
-      font-size: 12px;
-      color: #888;
-      cursor: pointer;
-      padding: 4px 0 0;
-      display: block;
-      margin-top: 6px;
-      text-decoration: underline;
+    .hva-item:hover .hva-delete,
+    .hva-item.hva-focused .hva-delete {
+      opacity: 1;
     }
-    #hva-custom-cancel:hover { color: #555; }
 
     /* ── Empty state ── */
     #hva-empty {
@@ -336,173 +275,150 @@ function deleteCustomHVA(hva) {
       z-index: 2147483647;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.2s, transform 0.2s;
+      /* FIX: was missing - toast visibility transitions */
+      transition: opacity 0.2s ease, transform 0.2s ease;
       white-space: nowrap;
       max-width: 90vw;
     }
-   #hva-status {
-  position: fixed;
+    /* FIX: added missing .hva-toast-show class so toasts actually appear */
+    #hva-toast.hva-toast-show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
 
-  bottom: 10px;
-  left: 10px;
+    /* ── Status badge ── */
+    #hva-status {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      z-index: 2147483647;
+      background: #22C55E;
+      color: #111111;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: "Amazon Ember", sans-serif;
+      border: 2px solid #111111;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    }
 
-  z-index: 2147483647;
+    /* ── Custom HVA popup overlay ── */
+    #custom-hva-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 2147483648;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #custom-hva-modal {
+      width: 500px;
+      max-width: 90vw;
+      background: white;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,.3);
+    }
+    #custom-hva-header {
+      background: #131921;
+      color: white;
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    #custom-hva-body {
+      padding: 20px;
+    }
+    #custom-hva-text {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    #custom-hva-text:focus {
+      outline: none;
+      border-color: #FF9900;
+      box-shadow: 0 0 0 3px rgba(255,153,0,0.25);
+    }
+    #custom-hva-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .custom-btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+      transition: filter 0.15s;
+    }
+    .custom-btn:hover { filter: brightness(0.95); }
+    .fill-btn {
+      background: #f3f4f6;
+      border: 1px solid #D5D9D9;
+    }
+    .save-btn {
+      background: #FF9900;
+      color: black;
+    }
+    .back-btn {
+      width: 100%;
+      margin-top: 14px;
+      padding: 12px;
+      background: #F3F4F6;
+      color: #111111;
+      border: 1px solid #D5D9D9;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+      transition: all 0.15s ease;
+    }
+    .back-btn:hover {
+      background: #E5E7EB;
+      border-color: #BFC5C5;
+    }
+    .cancel-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 12px;
+      background: #131921;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+      transition: all 0.15s ease;
+    }
+    .cancel-btn:hover { background: #232F3E; }
 
-  background: #22C55E;
-
-  color: #111111;
-
-  padding: 8px 14px;
-
-  border-radius: 999px;
-
-  font-size: 13px;
-  font-weight: 700;
-
-  font-family: "Amazon Ember", sans-serif;
-
-  border: 2px solid #111111;
-
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-} #custom-hva-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.55);
-  z-index: 2147483648;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#custom-hva-modal {
-  width: 500px;
-  max-width: 90vw;
-  background: white;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0,0,0,.3);
-}
-
-#custom-hva-header {
-  background: #131921;
-  color: white;
-  padding: 16px;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-#custom-hva-body {
-  padding: 20px;
-}
-
-#custom-hva-text {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 12px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-#custom-hva-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.custom-btn {
-  flex: 1;
-  padding: 10px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.fill-btn {
-  background: #f3f4f6;
-}
-
-.save-btn {
-  background: #FF9900;
-  color: black;
-}
-.back-btn {
-
-  width: 100%;
-
-  margin-top: 14px;
-
-  padding: 12px;
-
-  background: #F3F4F6;
-
-  color: #111111;
-
-  border: 1px solid #D5D9D9;
-
-  border-radius: 8px;
-
-  cursor: pointer;
-
-  font-weight: 700;
-
-  font-size: 14px;
-
-  transition: all 0.15s ease;
-}
-
-.back-btn:hover {
-
-  background: #E5E7EB;
-
-  border-color: #BFC5C5;
-
-}
-
-.cancel-btn {
-
-  width: 100%;
-
-  margin-top: 10px;
-
-  padding: 12px;
-
-  background: #131921;
-
-  color: white;
-
-  border: none;
-
-  border-radius: 8px;
-
-  cursor: pointer;
-
-  font-weight: 700;
-
-  font-size: 14px;
-
-  transition: all 0.15s ease;
-}
-
-.cancel-btn:hover {
-
-  background: #232F3E;
-
-}`;
+    /* ── Duplicate warning ── */
+    #hva-duplicate-warning {
+      font-size: 12px;
+      color: #c0392b;
+      margin-top: 6px;
+      display: none;
+    }
+  `;
 
   /* ─────────────────────────────────────────────
      3. STATE
   ───────────────────────────────────────────── */
-  let overlayEl = null;
-  let searchEl = null;
-  let listWrapEl = null;
-  let customFormEl = null;
-  let toastEl = null;
+  let overlayEl= null;
+  let searchEl= null;
+  let listWrapEl= null;
+  let toastEl= null;
   let toastTimer = null;
   let focusedIndex = -1;
-  let visibleItems = []; // NodeList snapshot of currently rendered .hva-item
-  let customFormOpen = false;
+  let visibleItems = []; // Array (not NodeList) of currently rendered .hva-item
 
   /* ─────────────────────────────────────────────
      4. INJECT STYLES
@@ -517,21 +433,39 @@ function deleteCustomHVA(hva) {
 
   /* ─────────────────────────────────────────────
      5. FIND THE CUSTOM HVA INPUT
-     Heuristics: look for a visible <input> or <textarea>
-     whose id / name / placeholder / aria-label suggests "custom hva".
-     Falls back to any newly visible text input near a "Custom" label.
+     FIX: Use aria/placeholder attributes instead of brittle positional index.
+     Falls back to position-based lookup as a last resort.
   ───────────────────────────────────────────── */
   function findCustomHVAInput() {
+    // Try aria-label or placeholder first (most reliable)
+    const byAttr = document.querySelector(
+      'textarea[aria-label*="custom" i], textarea[placeholder*="custom" i], ' +
+      'textarea[aria-label*="hva" i], textarea[placeholder*="hva" i]'
+    );
+    if (byAttr && isVisible(byAttr)) return byAttr;
 
-    const textareas = document.querySelectorAll('textarea');
-
-    // textarea[1] = Custom HVA field
-    if (textareas.length > 1) {
-        return textareas[1];
+    // Try a label element that says "Custom"
+    const labels = Array.from(document.querySelectorAll('label'));
+    for (const label of labels) {
+      if (/custom/i.test(label.textContent)) {
+        const forId = label.getAttribute('for');
+        if (forId) {
+          const el = document.getElementById(forId);
+          if (el && isVisible(el)) return el;
+        }
+        // Label wrapping the input
+        const wrapped = label.querySelector('textarea, input[type="text"]');
+        if (wrapped && isVisible(wrapped)) return wrapped;
+      }
     }
 
+    // Last resort: positional fallback (textarea[1])
+    const textareas = document.querySelectorAll('textarea');
+    if (textareas.length > 1 && isVisible(textareas[1])) return textareas[1];
+
     return null;
-}
+  }
+
   function isVisible(el) {
     if (!el || !el.offsetParent) return false;
     const s = window.getComputedStyle(el);
@@ -541,57 +475,38 @@ function deleteCustomHVA(hva) {
   /* ─────────────────────────────────────────────
      6. FILL INPUT (React-compatible)
   ───────────────────────────────────────────── */
-function fillCustomHVA(value) {
-
+  function fillCustomHVA(value) {
     const input = findCustomHVAInput();
-
     if (!input) {
-        console.error('[HVA] No textarea found');
-        return false;
+      console.error('[HVA] No textarea found');
+      return false;
     }
 
     input.focus();
 
-    if (input.tagName === 'TEXTAREA') {
+    const proto = input.tagName === 'TEXTAREA'
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
 
-        const setter = Object.getOwnPropertyDescriptor(
-            HTMLTextAreaElement.prototype,
-            'value'
-        ).set;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    setter.call(input, value);
 
-        setter.call(input, value);
-
-    } else {
-
-        const setter = Object.getOwnPropertyDescriptor(
-            HTMLInputElement.prototype,
-            'value'
-        ).set;
-
-        setter.call(input, value);
-    }
-
-    input.dispatchEvent(
-        new Event('input', { bubbles: true })
-    );
-
-    input.dispatchEvent(
-        new Event('change', { bubbles: true })
-    );
-
-    input.dispatchEvent(
-        new Event('blur', { bubbles: true })
+    ['input', 'change', 'blur'].forEach(type =>
+      input.dispatchEvent(new Event(type, { bubbles: true }))
     );
 
     console.log('[HVA] Filled:', value);
-
     return true;
-}
+  }
+
   /* ─────────────────────────────────────────────
      7. TOAST
   ───────────────────────────────────────────── */
   function ensureToast() {
-    if (document.getElementById('hva-toast')) return;
+    if (document.getElementById('hva-toast')) {
+      toastEl = document.getElementById('hva-toast');
+      return;
+    }
     toastEl = document.createElement('div');
     toastEl.id = 'hva-toast';
     document.body.appendChild(toastEl);
@@ -599,8 +514,7 @@ function fillCustomHVA(value) {
 
   function createToast(msg) {
     ensureToast();
-    toastEl = document.getElementById('hva-toast');
-    toastEl.innerHTML = `<span class="hva-toast-check">✔</span>${msg}`;
+    toastEl.textContent = `✔ ${msg}`;
     toastEl.classList.add('hva-toast-show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toastEl.classList.remove('hva-toast-show'), 2800);
@@ -625,25 +539,24 @@ function fillCustomHVA(value) {
   function renderList(query) {
     if (!listWrapEl) return;
     listWrapEl.innerHTML = '';
-    customFormOpen = false;
-    if (customFormEl) customFormEl.style.display = 'none';
 
     const q = (query || '').trim().toLowerCase();
-    const ALL_HVAS = [
-  ...HVA_LIST,
-  ...getCustomHVAs()
-];
 
-const filtered = ALL_HVAS.filter(
-  h => !q || h.toLowerCase().includes(q)
-);
+    // FIX: merge and deduplicate built-in + custom HVAs
+    const customHVAs = getCustomHVAs();
+    const ALL_HVAS = [
+      ...HVA_LIST,
+      ...customHVAs.filter(c => !HVA_LIST.includes(c))
+    ];
+
+    const filtered = ALL_HVAS.filter(h => !q || h.toLowerCase().includes(q));
 
     const emptyEl = document.getElementById('hva-empty');
-
     if (filtered.length === 0 && q) {
       if (emptyEl) emptyEl.style.display = 'block';
     } else {
       if (emptyEl) emptyEl.style.display = 'none';
+
       filtered.forEach(hva => {
         const item = document.createElement('div');
         item.className = 'hva-item';
@@ -656,96 +569,45 @@ const filtered = ALL_HVAS.filter(
         const label = document.createElement('span');
         label.className = 'hva-item-label';
         label.appendChild(buildHighlight(hva, query));
-const isCustomHVA = getCustomHVAs().includes(hva);
+
         item.appendChild(icon);
         item.appendChild(label);
-if (isCustomHVA) {
 
-    const deleteBtn = document.createElement('span');
+        // Delete button only for custom HVAs
+        const isCustom = customHVAs.includes(hva);
+        if (isCustom) {
+          const deleteBtn = document.createElement('span');
+          deleteBtn.className = 'hva-delete';
+          deleteBtn.title = 'Delete this custom HVA';
+          deleteBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6L18 20a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+              <path d="M10 11v6"></path>
+              <path d="M14 11v6"></path>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+            </svg>
+          `;
 
-    deleteBtn.className = 'hva-delete';
+          deleteBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            if (!confirm(`Delete "${hva}"?`)) return;
+            deleteCustomHVA(hva);
+            renderList(searchEl?.value || '');
+            createToast(`Deleted: ${hva}`);
+          });
 
-    deleteBtn.innerHTML = `
-<svg width="16" height="16" viewBox="0 0 24 24"
-     fill="none"
-     stroke="currentColor"
-     stroke-width="2"
-     stroke-linecap="round"
-     stroke-linejoin="round">
+          item.appendChild(deleteBtn);
+        }
 
-  <polyline points="3 6 5 6 21 6"></polyline>
-
-  <path d="M19 6L18 20
-           a2 2 0 0 1-2 2H8
-           a2 2 0 0 1-2-2L5 6">
-  </path>
-
-  <path d="M10 11v6"></path>
-  <path d="M14 11v6"></path>
-
-  <path d="M9 6V4
-           a1 1 0 0 1 1-1h4
-           a1 1 0 0 1 1 1v2">
-  </path>
-
-</svg>
-`;
-
-    deleteBtn.style.opacity = '0';
-
-    deleteBtn.style.cursor = 'pointer';
-deleteBtn.style.color = '#DC2626';
-
-deleteBtn.style.padding = '4px';
-
-deleteBtn.style.borderRadius = '4px';
-
-deleteBtn.style.transition = 'all 0.15s ease';
-    deleteBtn.style.marginLeft = 'auto';
-deleteBtn.addEventListener('mouseenter', () => {
-
-    deleteBtn.style.background = '#FEE2E2';
-
-});
-
-deleteBtn.addEventListener('mouseleave', () => {
-
-    deleteBtn.style.background = 'transparent';
-
-});
-    deleteBtn.addEventListener('click', (e) => {
-
-        e.stopPropagation();
-
-        const confirmed = confirm(
-            `Delete "${hva}" ?`
-        );
-
-        if (!confirmed) return;
-
-        deleteCustomHVA(hva);
-
-        renderList(searchEl?.value || '');
-
-        createToast(`Deleted: ${hva}`);
-    });
-
-    item.appendChild(deleteBtn);
-
-    item.addEventListener('mouseenter', () => {
-        deleteBtn.style.opacity = '1';
-    });
-
-    item.addEventListener('mouseleave', () => {
-        deleteBtn.style.opacity = '0';
-    });
-}
         item.addEventListener('click', () => selectHVA(hva));
         listWrapEl.appendChild(item);
       });
     }
 
-    // ➕ Custom HVA always at bottom
+    // ➕ "Custom HVA" option always at bottom
     const customItem = document.createElement('div');
     customItem.className = 'hva-item hva-custom-entry';
     customItem.dataset.hva = '__custom__';
@@ -763,8 +625,8 @@ deleteBtn.addEventListener('mouseleave', () => {
     customItem.addEventListener('click', openCustomForm);
     listWrapEl.appendChild(customItem);
 
-    // Refresh focusable items
-    visibleItems = listWrapEl.querySelectorAll('.hva-item');
+    // FIX: Use Array.from() so visibleItems is a true array, not a NodeList
+    visibleItems = Array.from(listWrapEl.querySelectorAll('.hva-item'));
     focusedIndex = -1;
   }
 
@@ -775,109 +637,102 @@ deleteBtn.addEventListener('mouseleave', () => {
   }
 
   function openCustomForm() {
-
     showCustomHVAPopup();
+  }
 
-}
-function showCustomHVAPopup() {
+  /* ─────────────────────────────────────────────
+     CUSTOM HVA POPUP
+     FIX: guard against duplicate overlays
+     FIX: "Back to Library" properly re-shows the main HVA modal
+  ───────────────────────────────────────────── */
+  function showCustomHVAPopup() {
+    // FIX: prevent stacking duplicate overlays
+    if (document.getElementById('custom-hva-overlay')) return;
 
     const overlay = document.createElement('div');
     overlay.id = 'custom-hva-overlay';
 
     overlay.innerHTML = `
-        <div id="custom-hva-modal">
-            <div id="custom-hva-header">
-                Custom HVA
-            </div>
-
-            <div id="custom-hva-body">
-
-                <label style="display:block;margin-bottom:8px;font-weight:600;">
-                    Type Your Custom HVA
-                </label>
-
-                <input
-                    id="custom-hva-text"
-                    type="text"
-                    placeholder="Enter HVA..."
-                >
-
-                <div id="custom-hva-actions">
-
-                    <button class="custom-btn fill-btn">
-                        Fill Now
-                    </button>
-
-                    <button class="custom-btn save-btn">
-                        Save & Fill
-                    </button>
-
-                </div>
-
-                <button class="back-btn">
-    ← Back to Library
-</button>
-
-<button class="cancel-btn">
-    ✕ Cancel
-</button>
-
-            </div>
+      <div id="custom-hva-modal">
+        <div id="custom-hva-header">Custom HVA</div>
+        <div id="custom-hva-body">
+          <label style="display:block;margin-bottom:8px;font-weight:600;">
+            Type Your Custom HVA
+          </label>
+          <input id="custom-hva-text" type="text" placeholder="Enter HVA…" autocomplete="off">
+          <div id="hva-duplicate-warning">
+            ⚠ This HVA already exists in the library.
+          </div>
+          <div id="custom-hva-actions">
+            <button class="custom-btn fill-btn">Fill Now</button>
+            <button class="custom-btn save-btn">Save &amp; Fill</button>
+          </div>
+          <button class="back-btn">← Back to Library</button>
+          <button class="cancel-btn">✕ Cancel</button>
         </div>
+      </div>
     `;
 
     document.body.appendChild(overlay);
 
     const input = overlay.querySelector('#custom-hva-text');
-
+    const warning = overlay.querySelector('#hva-duplicate-warning');
     setTimeout(() => input.focus(), 100);
 
-    overlay.querySelector('.fill-btn').onclick = () => {
-
-        const value = input.value.trim();
-
-        if (!value) return;
-
-        fillCustomHVA(value);
-
-        overlay.remove();
-
-        hideHVAPopup();
-
-        createToast(`Filled: ${value}`);
-    };
-
-    overlay.querySelector('.save-btn').onclick = () => {
-
-        const value = input.value.trim();
-
-        if (!value) return;
-
-        saveCustomHVA(value);
-
-        fillCustomHVA(value);
-
-        overlay.remove();
-
-        hideHVAPopup();
-
-        createToast(`Saved: ${value}`);
-    };
-
-    overlay.querySelector('.back-btn').onclick = () => {
-        overlay.remove();
-    };
-overlay.querySelector('.cancel-btn').onclick = () => {
-
-    overlay.remove();
-
-};
-    overlay.addEventListener('click', e => {
-        if (e.target === overlay) {
-            overlay.remove();
-        }
+    // Live duplicate check
+    input.addEventListener('input', () => {
+      const val = input.value.trim();
+      const allHVAs = [...HVA_LIST, ...getCustomHVAs()];
+      warning.style.display =
+        val && allHVAs.some(h => h.toLowerCase() === val.toLowerCase())
+          ? 'block' : 'none';
     });
-}
+
+    // Enter key submits "Fill Now"
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') overlay.querySelector('.fill-btn').click();
+    });
+
+    overlay.querySelector('.fill-btn').addEventListener('click', () => {
+      const value = input.value.trim();
+      if (!value) { input.focus(); return; }
+      fillCustomHVA(value);
+      overlay.remove();
+      hideHVAPopup();
+      createToast(`Filled: ${value}`);
+    });
+
+    overlay.querySelector('.save-btn').addEventListener('click', () => {
+      const value = input.value.trim();
+      if (!value) { input.focus(); return; }
+      saveCustomHVA(value);
+      fillCustomHVA(value);
+      overlay.remove();
+      hideHVAPopup();
+      createToast(`Saved & filled: ${value}`);
+    });
+
+    // FIX: "Back" closes the custom popup but keeps the main HVA library open
+    overlay.querySelector('.back-btn').addEventListener('click', () => {
+      overlay.remove();
+      // Re-render list in case a save happened
+      if (overlayEl && document.body.contains(overlayEl)) {
+        renderList(searchEl?.value || '');
+      } else {
+        showHVAPopup();
+      }
+    });
+
+    overlay.querySelector('.cancel-btn').addEventListener('click', () => {
+      overlay.remove();
+      hideHVAPopup();
+    });
+
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) overlay.remove();
+    });
+  }
+
   function showHVAPopup() {
     injectStyles();
     if (overlayEl && document.body.contains(overlayEl)) return; // already open
@@ -930,57 +785,20 @@ overlay.querySelector('.cancel-btn').onclick = () => {
     emptyEl.innerHTML = `
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
            stroke="#999" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
       No HVAs matched your search.
     `;
-
-   /*
-customFormEl = document.createElement('div');
-customFormEl.id = 'hva-custom-form';
-customFormEl.style.display = 'none';
-customFormEl.innerHTML = `
-  <label>Enter Custom HVA</label>
-  <div id="hva-custom-input-row">
-    <input id="hva-custom-text" type="text" placeholder="Type your HVA…" autocomplete="off" />
-    <button id="hva-custom-insert">Insert</button>
-  </div>
-  <button id="hva-custom-cancel">Cancel</button>
-`;
-
-customFormEl.querySelector('#hva-custom-insert').addEventListener('click', () => {
-  const val = (customFormEl.querySelector('#hva-custom-text').value || '').trim();
-  if (!val) {
-    customFormEl.querySelector('#hva-custom-text').focus();
-    return;
-  }
-  fillCustomHVA(val);
-  hideHVAPopup();
-  createToast(`Custom HVA set: ${val}`);
-});
-
-customFormEl.querySelector('#hva-custom-text').addEventListener('keydown', e => {
-  if (e.key === 'Enter')
-    customFormEl.querySelector('#hva-custom-insert').click();
-});
-
-customFormEl.querySelector('#hva-custom-cancel').addEventListener('click', () => {
-  customFormEl.style.display = 'none';
-  customFormOpen = false;
-  searchEl.focus();
-});
-*/
 
     /* ── Assemble ── */
     modal.appendChild(header);
     modal.appendChild(searchWrap);
     modal.appendChild(emptyEl);
     modal.appendChild(listWrapEl);
-    // modal.appendChild(customFormEl);
     overlayEl.appendChild(modal);
     document.body.appendChild(overlayEl);
 
-    /* ── Keyboard ── */
     document.addEventListener('keydown', handleGlobalKeydown);
 
     renderList('');
@@ -989,10 +807,9 @@ customFormEl.querySelector('#hva-custom-cancel').addEventListener('click', () =>
 
   function hideHVAPopup() {
     if (overlayEl && overlayEl.parentNode) overlayEl.parentNode.removeChild(overlayEl);
-    overlayEl = null;
-    searchEl = null;
-    listWrapEl = null;
-    customFormEl = null;
+    overlayEl= null;
+    searchEl= null;
+    listWrapEl= null;
     focusedIndex = -1;
     visibleItems = [];
     document.removeEventListener('keydown', handleGlobalKeydown);
@@ -1002,16 +819,19 @@ customFormEl.querySelector('#hva-custom-cancel').addEventListener('click', () =>
      9. KEYBOARD NAVIGATION
   ───────────────────────────────────────────── */
   function setFocus(idx) {
-    visibleItems = listWrapEl ? listWrapEl.querySelectorAll('.hva-item') : [];
+    // FIX: re-query as array so .forEach always works
+    visibleItems = listWrapEl
+      ? Array.from(listWrapEl.querySelectorAll('.hva-item'))
+      : [];
     visibleItems.forEach((el, i) => el.classList.toggle('hva-focused', i === idx));
     if (visibleItems[idx]) visibleItems[idx].scrollIntoView({ block: 'nearest' });
     focusedIndex = idx;
   }
 
   function handleKeydown(e) {
-    // Called on searchEl keydown
-    if (customFormOpen) return;
-    visibleItems = listWrapEl ? listWrapEl.querySelectorAll('.hva-item') : [];
+    visibleItems = listWrapEl
+      ? Array.from(listWrapEl.querySelectorAll('.hva-item'))
+      : [];
     const len = visibleItems.length;
     if (!len) return;
 
@@ -1032,104 +852,27 @@ customFormEl.querySelector('#hva-custom-cancel').addEventListener('click', () =>
   }
 
   /* ─────────────────────────────────────────────
-     10. DETECT "Custom" CLICK → WAIT FOR INPUT → SHOW POPUP
+     10. CLICK DETECTION – show popup on "Custom" option click
   ───────────────────────────────────────────── */
-  /**
-   * We detect the "Custom" HVA option via a delegated click listener.
-   * The heuristic: any click on an element whose text is exactly "Custom"
-   * (or contains "Custom" and relates to HVA/option) near a radio/checkbox/button.
-   *
-   * After the click we give the app up to 2 s to render the custom input field,
-   * then show the popup.
-   */
-  const CUSTOM_TEXT_RE = /custom/i;
+  document.addEventListener('click', function (e) {
+    const option = e.target.closest('[data-key="Custom"]');
+    if (!option) return;
+    console.log('[HVA] Custom option clicked');
+    setTimeout(() => showHVAPopup(), 150);
+  }, true);
 
-  function isCustomHVAOption(el) {
-    if (!el) return false;
-
-    const selectValue = el.closest('.react-aria-SelectValue');
-
-    if (selectValue) {
-        const value = selectValue.textContent.trim();
-        return /custom/i.test(value);
-    }
-
-    const text = (el.textContent || '').trim();
-
-    if (/custom/i.test(text)) {
-        return true;
-    }
-
-    return false;
-}
-
-  function waitForCustomInput(callback, timeout = 2000) {
-    const start = Date.now();
-
-    // Already present?
-    const immediate = findCustomHVAInput();
-    if (immediate) { callback(immediate); return; }
-
-    const observer = new MutationObserver(() => {
-      const input = findCustomHVAInput();
-      if (input) {
-        observer.disconnect();
-        callback(input);
-      } else if (Date.now() - start > timeout) {
-        observer.disconnect();
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-
-    // Safety timeout
-    setTimeout(() => observer.disconnect(), timeout + 100);
+  /* ─────────────────────────────────────────────
+     11. EXPOSE HELPERS TO CONSOLE (dev convenience)
+  ───────────────────────────────────────────── */
+  function createStatusIndicator() {
+    if (document.getElementById('hva-status')) return;
+    const badge = document.createElement('div');
+    badge.id = 'hva-status';
+    badge.textContent = 'HVA Library ON';
+    document.body.appendChild(badge);
   }
 
-document.addEventListener('click', function (e) {
-
-    const option = e.target.closest('[data-key="Custom"]');
-
-    if (!option) return;
-
-    console.log('CUSTOM CLICKED');
-
-    setTimeout(() => {
-        showHVAPopup();
-    }, 150);
-
-}, true);
-
-
-  /* ─────────────────────────────────────────────
-     11. MUTATION OBSERVER – also watch for dynamic
-         "Custom" options added after page load
-  ───────────────────────────────────────────── */
-  const globalObserver = new MutationObserver(mutations => {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        // If a new "Custom" option appears already focused/selected, show popup
-// disabled
-      }
-    }
-  });
-  globalObserver.observe(document.body, { childList: true, subtree: true });
-
-  /* ─────────────────────────────────────────────
-     12. EXPOSE HELPERS TO CONSOLE (dev convenience)
-  ───────────────────────────────────────────── */
- function createStatusIndicator() {
-
-    if (document.getElementById('hva-status')) return;
-
-    const badge = document.createElement('div');
-
-    badge.id = 'hva-status';
-
-    badge.textContent = 'HVA Library ON';
-
-    document.body.appendChild(badge);
-} window.__HVALibrary = {
+  window.__HVALibrary = {
     showHVAPopup,
     hideHVAPopup,
     findCustomHVAInput,
@@ -1137,12 +880,187 @@ document.addEventListener('click', function (e) {
     createToast,
     getCustomHVAs,
     saveCustomHVA,
-    deleteCustomHVA
-};
+    deleteCustomHVA,
+  };
 
   injectStyles();
-ensureToast();
-createStatusIndicator();
+  ensureToast();
+  createStatusIndicator();
 
-console.info('[HVA Library] Userscript loaded...');
+  console.info('[HVA Library] module loaded');
+  })(); // ── end HVALibraryModule ──
+
+  /* ═════════════════════════════════════════════
+     MODULE B: QUERY COUNTER
+  ═════════════════════════════════════════════ */
+  (function QueryCounterModule() {
+
+    // ─── Load persisted count ───────────────────────────────────────────────
+    let queryCount = GM_getValue('queryCount', 0);
+    let lastResetDate = GM_getValue('lastResetDate', null);
+
+    const today = new Date().toDateString();
+    if (lastResetDate !== today) {
+      queryCount = 0;
+      GM_setValue('queryCount', 0);
+      GM_setValue('lastResetDate', today);
+    }
+
+    // ─── Create floating counter UI ─────────────────────────────────────────
+    const counter = document.createElement('div');
+    counter.id = 'query-counter';
+    counter.innerHTML = `
+      <div id="qc-header">📊 Query Counter</div>
+      <div id="qc-body">
+        <span id="qc-count">${queryCount}</span>
+        <span id="qc-label"> queries today</span>
+      </div>
+      <button id="qc-reset">Reset</button>
+    `;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #query-counter {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #232F3E;
+        color: #fff;
+        padding: 12px 16px;
+        border-radius: 10px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        z-index: 999999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        min-width: 160px;
+        text-align: center;
+        cursor: move;
+        user-select: none;
+      }
+      #qc-header {
+        font-weight: bold;
+        font-size: 13px;
+        margin-bottom: 6px;
+        color: #FF9900;
+      }
+      #qc-count {
+        font-size: 32px;
+        font-weight: bold;
+        color: #FF9900;
+        transition: color 0.3s ease;
+      }
+      #qc-label {
+        font-size: 12px;
+        color: #ccc;
+      }
+      #qc-reset {
+        margin-top: 8px;
+        background: #FF9900;
+        border: none;
+        color: #232F3E;
+        padding: 4px 12px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 12px;
+        width: 100%;
+        transition: background 0.2s ease;
+      }
+      #qc-reset:hover {
+        background: #e68a00;
+      }
+      #qc-reset[data-confirming] {
+        background: #cc0000;
+        color: #fff;
+      }
+      #qc-reset[data-confirming]:hover {
+        background: #aa0000;
+      }
+    `;
+
+    document.head.appendChild(style);
+    document.body.appendChild(counter);
+
+    // ─── Normalize position to top/left immediately after mount ─────────────
+    requestAnimationFrame(() => {
+      const rect = counter.getBoundingClientRect();
+      counter.style.top = rect.top + 'px';
+      counter.style.left = rect.left + 'px';
+      counter.style.bottom = 'auto';
+      counter.style.right = 'auto';
+    });
+
+    // ─── Make counter draggable ──────────────────────────────────────────────
+    let isDragging = false, offsetX, offsetY;
+
+    counter.addEventListener('mousedown', (e) => {
+      if (e.target.id === 'qc-reset') return;
+      isDragging = true;
+      offsetX = e.clientX - counter.getBoundingClientRect().left;
+      offsetY = e.clientY - counter.getBoundingClientRect().top;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      counter.style.left = `${e.clientX - offsetX}px`;
+      counter.style.top = `${e.clientY - offsetY}px`;
+    });
+
+    document.addEventListener('mouseup', () => isDragging = false);
+
+    // ─── Reset button — inline two-step confirm ──────────────────────────────
+    document.getElementById('qc-reset').addEventListener('click', () => {
+      const btn = document.getElementById('qc-reset');
+      if (btn.dataset.confirming) {
+        queryCount = 0;
+        GM_setValue('queryCount', 0);
+        document.getElementById('qc-count').textContent = 0;
+        btn.textContent = 'Reset';
+        delete btn.dataset.confirming;
+      } else {
+        btn.dataset.confirming = 'true';
+        btn.textContent = 'Confirm?';
+        setTimeout(() => {
+          if (btn.dataset.confirming) {
+            btn.textContent = 'Reset';
+            delete btn.dataset.confirming;
+          }
+        }, 3000);
+      }
+    });
+
+    // ─── Flash animation on count increment ──────────────────────────────────
+    function updateCount() {
+      queryCount++;
+      GM_setValue('queryCount', queryCount);
+      const countEl = document.getElementById('qc-count');
+      countEl.textContent = queryCount;
+      countEl.style.color = '#FF9900';
+      countEl.style.transition = 'transform 0.2s ease';
+      countEl.style.transform = 'scale(1.4)';
+      setTimeout(() => countEl.style.transform = 'scale(1)', 300);
+    }
+
+    // ─── MutationObserver: watch for Submit button ───────────────────────────
+    const observer = new MutationObserver(() => {
+      const submitButtons = document.querySelectorAll('button');
+      submitButtons.forEach((btn) => {
+        if (
+          btn.innerText.trim().toLowerCase() === 'submit' &&
+          !btn.dataset.qcListening
+        ) {
+          btn.dataset.qcListening = 'true';
+          btn.addEventListener('click', () => {
+            setTimeout(updateCount, 500);
+          });
+        }
+      });
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    console.info('[Query Counter] module loaded');
+  })(); // ── end QueryCounterModule ──
+
+  console.info('[Combined Script] HVA Library + Query Counter ready');
 })();
