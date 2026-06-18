@@ -11,6 +11,8 @@
 // @match        https://es-pre-prod.amazon.com/*
 // @match        https://ca-pre-prod.amazon.com/*
 // @match        https://mx-pre-prod.amazon.com/*
+// @match        https://in-pre-prod.amazon.com/*
+
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-idle
