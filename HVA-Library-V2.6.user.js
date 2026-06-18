@@ -1,7 +1,8 @@
+
 // ==UserScript==
 // @name         Amazon Business Prime - HVA Library + Query Counter
 // @namespace    http://tampermonkey.net/
-// @version      4.0.0
+// @version      4.1.0
 // @description  Combined script: (1) searchable HVA Library modal for the Custom HVA field, (2) floating query counter tracking feedback panel submissions. Active only when the URL contains showDevConsole=true, on any page/path, including SPA navigation without full reloads.
 // @author       Internal Eval Tools / arvindon / piyush
 // @match        https://pre-prod.amazon.com/*
@@ -11,8 +12,6 @@
 // @match        https://es-pre-prod.amazon.com/*
 // @match        https://ca-pre-prod.amazon.com/*
 // @match        https://mx-pre-prod.amazon.com/*
-// @match        https://in-pre-prod.amazon.com/*
-
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-idle
@@ -78,7 +77,6 @@
 
   function saveCustomHVA(hva) {
     const items = getCustomHVAs();
-    // FIX: also check against built-in list to prevent duplicates
     const allExisting = [...HVA_LIST, ...items];
     if (!allExisting.includes(hva)) {
       items.push(hva);
@@ -307,12 +305,10 @@
       z-index: 2147483647;
       opacity: 0;
       pointer-events: none;
-      /* FIX: was missing - toast visibility transitions */
       transition: opacity 0.2s ease, transform 0.2s ease;
       white-space: nowrap;
       max-width: 90vw;
     }
-    /* FIX: added missing .hva-toast-show class so toasts actually appear */
     #hva-toast.hva-toast-show {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
@@ -450,7 +446,7 @@
   let toastEl        = null;
   let toastTimer     = null;
   let focusedIndex   = -1;
-  let visibleItems   = []; // Array (not NodeList) of currently rendered .hva-item
+  let visibleItems   = [];
 
   /* ─────────────────────────────────────────────
      4. INJECT STYLES
@@ -465,18 +461,14 @@
 
   /* ─────────────────────────────────────────────
      5. FIND THE CUSTOM HVA INPUT
-     FIX: Use aria/placeholder attributes instead of brittle positional index.
-     Falls back to position-based lookup as a last resort.
   ───────────────────────────────────────────── */
   function findCustomHVAInput() {
-    // Try aria-label or placeholder first (most reliable)
     const byAttr = document.querySelector(
       'textarea[aria-label*="custom" i], textarea[placeholder*="custom" i], ' +
       'textarea[aria-label*="hva" i], textarea[placeholder*="hva" i]'
     );
     if (byAttr && isVisible(byAttr)) return byAttr;
 
-    // Try a label element that says "Custom"
     const labels = Array.from(document.querySelectorAll('label'));
     for (const label of labels) {
       if (/custom/i.test(label.textContent)) {
@@ -485,13 +477,11 @@
           const el = document.getElementById(forId);
           if (el && isVisible(el)) return el;
         }
-        // Label wrapping the input
         const wrapped = label.querySelector('textarea, input[type="text"]');
         if (wrapped && isVisible(wrapped)) return wrapped;
       }
     }
 
-    // Last resort: positional fallback (textarea[1])
     const textareas = document.querySelectorAll('textarea');
     if (textareas.length > 1 && isVisible(textareas[1])) return textareas[1];
 
@@ -574,7 +564,6 @@
 
     const q = (query || '').trim().toLowerCase();
 
-    // FIX: merge and deduplicate built-in + custom HVAs
     const customHVAs = getCustomHVAs();
     const ALL_HVAS = [
       ...HVA_LIST,
@@ -605,7 +594,6 @@
         item.appendChild(icon);
         item.appendChild(label);
 
-        // Delete button only for custom HVAs
         const isCustom = customHVAs.includes(hva);
         if (isCustom) {
           const deleteBtn = document.createElement('span');
@@ -639,7 +627,6 @@
       });
     }
 
-    // ➕ "Custom HVA" option always at bottom
     const customItem = document.createElement('div');
     customItem.className = 'hva-item hva-custom-entry';
     customItem.dataset.hva = '__custom__';
@@ -657,7 +644,6 @@
     customItem.addEventListener('click', openCustomForm);
     listWrapEl.appendChild(customItem);
 
-    // FIX: Use Array.from() so visibleItems is a true array, not a NodeList
     visibleItems = Array.from(listWrapEl.querySelectorAll('.hva-item'));
     focusedIndex = -1;
   }
@@ -674,11 +660,8 @@
 
   /* ─────────────────────────────────────────────
      CUSTOM HVA POPUP
-     FIX: guard against duplicate overlays
-     FIX: "Back to Library" properly re-shows the main HVA modal
   ───────────────────────────────────────────── */
   function showCustomHVAPopup() {
-    // FIX: prevent stacking duplicate overlays
     if (document.getElementById('custom-hva-overlay')) return;
 
     const overlay = document.createElement('div');
@@ -711,7 +694,6 @@
     const warning = overlay.querySelector('#hva-duplicate-warning');
     setTimeout(() => input.focus(), 100);
 
-    // Live duplicate check
     input.addEventListener('input', () => {
       const val = input.value.trim();
       const allHVAs = [...HVA_LIST, ...getCustomHVAs()];
@@ -720,7 +702,6 @@
           ? 'block' : 'none';
     });
 
-    // Enter key submits "Fill Now"
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') overlay.querySelector('.fill-btn').click();
     });
@@ -744,10 +725,8 @@
       createToast(`Saved & filled: ${value}`);
     });
 
-    // FIX: "Back" closes the custom popup but keeps the main HVA library open
     overlay.querySelector('.back-btn').addEventListener('click', () => {
       overlay.remove();
-      // Re-render list in case a save happened
       if (overlayEl && document.body.contains(overlayEl)) {
         renderList(searchEl?.value || '');
       } else {
@@ -767,23 +746,20 @@
 
   function showHVAPopup() {
     injectStyles();
-    if (overlayEl && document.body.contains(overlayEl)) return; // already open
+    if (overlayEl && document.body.contains(overlayEl)) return;
 
-    /* ── Overlay ── */
     overlayEl = document.createElement('div');
     overlayEl.id = 'hva-overlay';
     overlayEl.addEventListener('mousedown', e => {
       if (e.target === overlayEl) hideHVAPopup();
     });
 
-    /* ── Modal ── */
     const modal = document.createElement('div');
     modal.id = 'hva-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-label', 'HVA Library');
 
-    /* ── Header ── */
     const header = document.createElement('div');
     header.id = 'hva-header';
     header.innerHTML = `<h2><span>HVA</span> Library</h2>`;
@@ -794,7 +770,6 @@
     closeBtn.addEventListener('click', hideHVAPopup);
     header.appendChild(closeBtn);
 
-    /* ── Search ── */
     const searchWrap = document.createElement('div');
     searchWrap.id = 'hva-search-wrap';
     searchEl = document.createElement('input');
@@ -807,11 +782,9 @@
     searchEl.addEventListener('keydown', handleKeydown);
     searchWrap.appendChild(searchEl);
 
-    /* ── List ── */
     listWrapEl = document.createElement('div');
     listWrapEl.id = 'hva-list-wrap';
 
-    /* ── Empty state ── */
     const emptyEl = document.createElement('div');
     emptyEl.id = 'hva-empty';
     emptyEl.innerHTML = `
@@ -823,7 +796,6 @@
       No HVAs matched your search.
     `;
 
-    /* ── Assemble ── */
     modal.appendChild(header);
     modal.appendChild(searchWrap);
     modal.appendChild(emptyEl);
@@ -851,7 +823,6 @@
      9. KEYBOARD NAVIGATION
   ───────────────────────────────────────────── */
   function setFocus(idx) {
-    // FIX: re-query as array so .forEach always works
     visibleItems = listWrapEl
       ? Array.from(listWrapEl.querySelectorAll('.hva-item'))
       : [];
@@ -884,8 +855,7 @@
   }
 
   /* ─────────────────────────────────────────────
-     10. CLICK DETECTION – show popup on "Custom" option click
-     Registered/unregistered by init()/destroy() below.
+     10. CLICK DETECTION
   ───────────────────────────────────────────── */
   function handleCustomOptionClick(e) {
     const option = e.target.closest('[data-key="Custom"]');
@@ -895,7 +865,7 @@
   }
 
   /* ─────────────────────────────────────────────
-     11. EXPOSE HELPERS TO CONSOLE (dev convenience)
+     11. EXPOSE HELPERS TO CONSOLE
   ───────────────────────────────────────────── */
   function createStatusIndicator() {
     if (document.getElementById('hva-status')) return;
@@ -944,7 +914,7 @@
   })(); // ── end HVALibraryModule factory ──
 
   /* ═════════════════════════════════════════════
-     MODULE B: QUERY COUNTER
+     MODULE B: QUERY COUNTER (FIXED)
   ═════════════════════════════════════════════ */
   const QueryCounterModule = (function () {
     let initialized = false;
@@ -953,6 +923,62 @@
     let styleEl = null;
     let observer = null;
     let onMouseDown, onMouseMove, onMouseUp, onResetClick;
+
+    /* ─────────────────────────────────────────────
+       VALIDATION HELPER:
+       Only count a submission when ALL visible fields
+       in the feedback panel are filled.
+    ───────────────────────────────────────────── */
+    function areAllFieldsFilled(submitBtn) {
+      // Find the closest form or panel container holding the submit button
+      const container = submitBtn.closest('form') ||
+                        submitBtn.closest('[role="dialog"]') ||
+                        submitBtn.closest('[role="region"]') ||
+                        submitBtn.closest('.feedback-panel') ||
+                        submitBtn.closest('[class*="panel"]') ||
+                        submitBtn.closest('[class*="form"]') ||
+                        submitBtn.parentElement?.closest('div');
+
+      if (!container) return false;
+
+      // Gather all visible input elements within the container
+      const inputs = container.querySelectorAll(
+        'input[type="text"], input[type="email"], input[type="number"], ' +
+        'input[type="url"], input[type="tel"], textarea, select'
+      );
+
+      // If no fields found at all, don't count (prevents random button clicks)
+      if (inputs.length === 0) return false;
+
+      // Check each visible field has a value
+      for (const input of inputs) {
+        // Skip hidden/invisible fields
+        if (input.offsetParent === null) continue;
+        const style = window.getComputedStyle(input);
+        if (style.display === 'none' || style.visibility === 'hidden') continue;
+
+        const value = input.value.trim();
+        if (!value) return false;
+      }
+
+      // Also check for any required radio button groups
+      const radioGroups = new Set();
+      container.querySelectorAll('input[type="radio"]').forEach(r => {
+        if (r.name) radioGroups.add(r.name);
+      });
+      for (const groupName of radioGroups) {
+        const checked = container.querySelector(`input[type="radio"][name="${groupName}"]:checked`);
+        if (!checked) return false;
+      }
+
+      // Check for any unchecked required checkboxes (if marked required)
+      const requiredCheckboxes = container.querySelectorAll('input[type="checkbox"][required]');
+      for (const cb of requiredCheckboxes) {
+        if (!cb.checked) return false;
+      }
+
+      return true;
+    }
 
     function init() {
       if (initialized) return;
@@ -969,7 +995,7 @@
         GM_setValue('lastResetDate', today);
       }
 
-      // Guard against double-mount (e.g. rapid SPA nav toggling)
+      // Guard against double-mount
       if (document.getElementById('query-counter')) return;
 
       // ─── Create floating counter UI ─────────────────────────────────
@@ -1056,7 +1082,7 @@
         counterEl.style.left = rect.left + 'px';
         counterEl.style.bottom = 'auto';
         counterEl.style.right = 'auto';
-    });
+      });
 
       // ─── Make counter draggable ──────────────────────────────────────
       let isDragging = false, offsetX, offsetY;
@@ -1103,6 +1129,7 @@
       document.getElementById('qc-reset').addEventListener('click', onResetClick);
 
       // ─── MutationObserver: watch for Submit button ─────────────────────
+      // FIX: Only increment counter when ALL fields are filled
       observer = new MutationObserver(() => {
         const submitButtons = document.querySelectorAll('button');
         submitButtons.forEach((btn) => {
@@ -1112,7 +1139,14 @@
           ) {
             btn.dataset.qcListening = 'true';
             btn.addEventListener('click', () => {
-              setTimeout(updateCount, 500);
+              // Wait briefly for React/form state to settle, then validate
+              setTimeout(() => {
+                if (areAllFieldsFilled(btn)) {
+                  updateCount();
+                } else {
+                  console.log('[Query Counter] Submit clicked but not all fields are filled — skipping count.');
+                }
+              }, 500);
             });
           }
         });
@@ -1158,10 +1192,6 @@
 
   /* ═════════════════════════════════════════════
      ACTIVATION CONTROLLER
-     Watches the URL (including SPA pushState/replaceState
-     navigation, not just full page loads) and mounts/
-     unmounts both modules based on whether the
-     showDevConsole=true query param is present.
   ═════════════════════════════════════════════ */
   let currentlyActive = false;
 
@@ -1184,8 +1214,6 @@
   syncActivation();
 
   // ── Watch for SPA navigation (pushState/replaceState/popstate) ──
-  // Single-page apps change the URL without a full reload, so we patch
-  // history methods to re-check activation whenever the URL changes.
   (function watchUrlChanges() {
     const _pushState = history.pushState;
     const _replaceState = history.replaceState;
@@ -1208,11 +1236,9 @@
 
     window.addEventListener('hva-url-changed', syncActivation);
 
-    // Fallback safety net: some SPAs update the URL via History API
-    // in ways that don't always fire predictably. A light periodic
-    // check catches anything the patches above might miss.
     setInterval(syncActivation, 1000);
   })();
 
   console.info('[Combined Script] HVA Library + Query Counter loaded (waiting for activation)');
 })();
+
