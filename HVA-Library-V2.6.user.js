@@ -3,8 +3,14 @@
 // @namespace    http://tampermonkey.net/
 // @version      4.0.0
 // @description  Combined script: (1) searchable HVA Library modal for the Custom HVA field, (2) floating query counter tracking feedback panel submissions. Active only when the URL contains showDevConsole=true, on any page/path, including SPA navigation without full reloads.
-// @author       Internal Eval Tools / arvindon
+// @author       Internal Eval Tools / arvindon / piyush
 // @match        https://pre-prod.amazon.com/*
+// @match        https://de-pre-prod.amazon.com/*
+// @match        https://it-pre-prod.amazon.com/*
+// @match        https://fr-pre-prod.amazon.com/*
+// @match        https://es-pre-prod.amazon.com/*
+// @match        https://ca-pre-prod.amazon.com/*
+// @match        https://mx-pre-prod.amazon.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-idle
